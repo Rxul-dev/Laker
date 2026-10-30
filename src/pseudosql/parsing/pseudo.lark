@@ -1,0 +1,67 @@
+// =========================================================================
+// Gramática del Pseudolenguaje PostgreSQL (EBNF de Lark)
+// Las palabras clave ("..."i) no distinguen mayúsculas de minúsculas.
+// =========================================================================
+
+// Un programa son instrucciones, una por línea (las líneas vacías se ignoran)
+start: _NL? (statement (_NL statement)* _NL?)?
+
+?statement: make_stmt
+          | get_stmt
+          | put_stmt
+          | drop_stmt
+
+// MAKE <tabla> (<campo> <tipo>, ...)
+make_stmt: "MAKE"i NAME "(" field ("," field)* ")"
+field: NAME TYPE_NAME
+
+// GET <campos> FROM <tabla> [WHERE ..] [SORT .. [ASC|DESC]] [TOP n]
+get_stmt: "GET"i columns "FROM"i NAME [where_clause] [sort_clause] [top_clause]
+columns: (STAR | "ALL"i)           -> all_columns
+       | NAME ("," NAME)*          -> column_list
+sort_clause: "SORT"i NAME [SORT_DIR]
+top_clause: "TOP"i INT
+
+// PUT <tabla> (<campo> = <valor>, ...) [WHERE ..]
+//   sin WHERE -> INSERT      con WHERE -> UPDATE
+put_stmt: "PUT"i NAME "(" assignment ("," assignment)* ")" [where_clause]
+assignment: NAME "=" value
+
+// DROP <tabla> [WHERE ..]
+//   sin WHERE -> DROP TABLE  con WHERE -> DELETE
+drop_stmt: "DROP"i NAME [where_clause]
+
+// ---- Condiciones --------------------------------------------------------
+where_clause: "WHERE"i or_expr
+?or_expr: and_expr ("OR"i and_expr)*
+?and_expr: comparison ("AND"i comparison)*
+?comparison: operand OP operand        -> compare
+           | operand "LIKE"i operand    -> like
+           | operand "IS"i "NULL"i       -> is_null
+           | operand "IS"i "NOT"i "NULL"i -> is_not_null
+           | "(" or_expr ")"           -> group
+
+?operand: NAME   -> ident
+        | value
+?value: STRING   -> string
+      | NUMBER   -> number
+      | "TRUE"i   -> true
+      | "FALSE"i  -> false
+      | "NULL"i   -> null
+
+// ---- Terminales ---------------------------------------------------------
+OP: "<=" | ">=" | "<>" | "!=" | "=" | "<" | ">"
+STAR: "*"
+NAME: /[A-Za-z_][A-Za-z0-9_]*/
+TYPE_NAME: /[A-Za-z_][A-Za-z0-9_]*!?/
+STRING: /'([^'\n]|'')*'/ | /"([^"\n]|"")*"/
+SORT_DIR: "ASC"i | "DESC"i
+NUMBER: /-?\d+(\.\d+)?/
+INT: /\d+/
+COMMENT: /--[^\n]*/
+// Un salto de línea absorbe las líneas vacías y las de solo comentario
+_NL: /(\r?\n[ \t]*(--[^\n]*)?)+/
+
+%import common.WS_INLINE
+%ignore WS_INLINE
+%ignore COMMENT
